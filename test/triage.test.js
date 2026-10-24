@@ -54,8 +54,13 @@ test('CLI refuses baseline overwrite, including existing symlink aliases', async
   t.after(() => rm(dir, { recursive: true, force: true }));
   const file = join(dir, 'baseline.json'); const alias = join(dir, 'alias.json');
   const original = JSON.stringify(baseline);
-  await writeFile(file, original); await symlink(file, alias);
-  for (const out of [file, alias]) {
+  await writeFile(file, original);
+  let linked = true;
+  try { await symlink(file, alias); } catch (error) {
+    if (error.code !== 'EPERM' && error.code !== 'EACCES') throw error;
+    linked = false;
+  }
+  for (const out of linked ? [file, alias] : [file]) {
     const result = cli('run', '--cases', 'examples/cases.jsonl', '--adapter', 'missing.mjs', '--baseline', file, '--out', out);
     assert.equal(result.status, 2);
     assert.match(result.stderr, /overwrite an input/);

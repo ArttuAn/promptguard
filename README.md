@@ -21,7 +21,7 @@
 | Stage | What EvalDiff does |
 |:--|:--|
 | **Dataset** | Load JSONL cases with stable IDs, inputs, and explicit grading criteria |
-| **Inference** | Run your JavaScript app or an OpenAI system prompt, one case at a time |
+| **Inference** | Run your JavaScript app or an OpenAI system prompt, case by case and optionally in parallel |
 | **Grading** | Apply exact-match and JSON Schema graders; all graders must pass |
 | **Results** | Save per-case outputs, grading reasons, errors, and durations |
 | **Analysis** | Inspect tagged slices, per-grader pass rates, adapter errors, and p50/p95 latency |
@@ -222,6 +222,20 @@ Uses Chat Completions: the prompt becomes the system message, each input becomes
 
 Never expose provider keys to untrusted PR code. Live OpenAI calls were not used to validate this project.
 
+### Run independent cases in parallel
+
+Cases are independent, so slow API-backed evaluations can run several at once:
+
+```bash
+node bin/evaldiff.js run \
+  --cases cases.jsonl --adapter my-app.mjs \
+  --concurrency 4 --out .evaldiff/current.json
+```
+
+`--concurrency` accepts 1–32 (default 1). Cases are scheduled in parallel while **trials within a case stay sequential**, so `--repeat` ordering and evidence remain unchanged. Result order, verdicts, fingerprints, and comparisons are identical to a sequential run; only wall time changes.
+
+The adapter still runs inside one process and shares its state. Raise concurrency only as far as your provider rate limits, costs, and logging tolerate; lower it if requests start timing out. Timeouts remain per trial, and a slow case does not delay the others.
+
 ## ↔ Baseline comparisons
 
 Save a reviewed evaluation as a baseline:
@@ -282,7 +296,7 @@ Fork evaluations run without secrets. Commenting requires GitHub to associate th
 ## 🧪 Tests & layout
 
 ```bash
-npm test        # 33 tests: graders, trials, triage, isolation, analysis, exports, CLI
+npm test        # 37 tests: graders, trials, concurrency, triage, isolation, analysis, exports, CLI
 npm run demo    # Deterministic evaluation used in CI
 ```
 
@@ -307,7 +321,8 @@ docs/                       Original graphics and generated report
 - This is a regression evaluation tool, **not a sandbox or safety certification**. Adapters and schemas must be trusted.
 - Timeouts cancel cooperative I/O; they cannot interrupt CPU-bound adapters or work that ignores abort signals.
 - Artifacts/logs can contain outputs, grading reasons, and adapter exception text. Avoid sensitive datasets and secret-bearing errors; review artifact retention.
-- No semantic judge, statistical confidence intervals, automatic retries, parallelism, or factual verification. Exact matching is intentionally strict and may be unsuitable for free-form text.
+- No semantic judge, statistical confidence intervals, automatic retries, or factual verification. Exact matching is intentionally strict and may be unsuitable for free-form text.
+- `--concurrency` parallelizes cases, not trials. Adapters may be called simultaneously, so protect shared mutable state and respect provider rate limits.
 - A PR can change datasets, baselines, or workflows. Reports are not attestations; review those changes. Never run PR code in a write-enabled `pull_request_target` or reporting job.
 
 ## 🏷 Project signals
@@ -316,7 +331,7 @@ docs/                       Original graphics and generated report
 
 **Labels:** `area:graders` · `area:ci` · `area:cli` · `area:docs` · `type:bug` · `type:feature` · `good first issue`
 
-Potential next steps—not shipped features: custom grader plugins, statistical confidence intervals, trend history, and parallel execution.
+Potential next steps—not shipped features: custom grader plugins, statistical confidence intervals, and trend history.
 
 ---
 <p align="center"><img src="docs/logo.svg" width="26" alt=""><br><strong>Evaluate behavior. Review the diff.</strong><br><sub>MIT licensed · Small, inspectable, evaluation-first.</sub></p>

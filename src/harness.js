@@ -75,21 +75,35 @@ async function runTrial(item, adapter, timeoutMs, trial) {
   } finally { clearTimeout(timer); }
 }
 
-export async function runCases(cases, adapter, { timeoutMs = 30000, repeat = 1 } = {}) {
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await worker(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return results;
+}
+
+export async function runCases(cases, adapter, { timeoutMs = 30000, repeat = 1, concurrency = 1 } = {}) {
   if (!Number.isInteger(repeat) || repeat < 1 || repeat > 100) throw new Error('repeat must be an integer from 1 to 100.');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600000) throw new Error('timeoutMs must be an integer from 1 to 600000.');
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) throw new Error('concurrency must be an integer from 1 to 32.');
   if (!cases.length || cases.length * repeat > 100000) throw new Error('Evaluation must contain 1–100000 total trials.');
-  const results = [];
-  for (const item of cases) {
+  // Cases run in parallel up to the limit; trials within a case stay sequential.
+  const results = await mapWithConcurrency(cases, concurrency, async item => {
     const trials = [];
     for (let trial = 1; trial <= repeat; trial++) trials.push(await runTrial(item, adapter, timeoutMs, trial));
     const representative = trials.find(t => !t.passed) || trials[0];
-    results.push({ id: item.id, tags: item.tags || [], ...representative,
+    return { id: item.id, tags: item.tags || [], ...representative,
       passed: trials.every(t => t.passed),
       durationMs: trials.reduce((sum, t) => sum + t.durationMs, 0),
       ...(repeat > 1 ? { trials } : {})
-    });
-  }
+    };
+  });
   return {
     version: 1,
     trialsPerCase: repeat,

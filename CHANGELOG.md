@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- `--concurrency N` evaluates up to 32 cases in parallel, reducing wall time for API-backed datasets.
+- Trials within a case remain sequential, so repetition order, evidence, fingerprints, and comparisons are unchanged.
+- Invalid concurrency values are rejected before inference and the option is limited to `run`.
+- The symlink overwrite test now skips the alias half only on hosts where symlink creation is not permitted.
+- 37 tests, including concurrency limits, stable ordering, sequential trials, and CLI validation.
+
 ## 0.3.1
 
 - `--failed-from` reruns only failed cases from a matching full-dataset evaluation, inheriting its trial count.

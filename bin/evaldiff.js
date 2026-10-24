@@ -24,6 +24,7 @@ Options:
   --model NAME      OpenAI model (default: OPENAI_MODEL or gpt-4.1-mini)
   --timeout MS      Per-trial timeout (default: 30000)
   --repeat N        Trials per case, 1–100 (default: 1; ALL trials must pass)
+  --concurrency N   Cases evaluated in parallel, 1–32 (default: 1; trials stay sequential)
   --failed-from PATH  Rerun only failures from a matching full-dataset artifact
   --details         Print changed case verdicts and reasons (requires baseline)
   --out PATH        Save full run artifact (includes inputs' resulting outputs)
@@ -43,7 +44,7 @@ async function save(path, data) {
 const json = path => readFile(path, 'utf8').then(JSON.parse);
 async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    cases: { type: 'string' }, adapter: { type: 'string' }, prompt: { type: 'string' }, model: { type: 'string' }, timeout: { type: 'string' }, repeat: { type: 'string' }, 'failed-from': { type: 'string' }, details: { type: 'boolean' }, out: { type: 'string' }, baseline: { type: 'string' }, current: { type: 'string' }, report: { type: 'string' }, markdown: { type: 'string' }, html: { type: 'string' }, summary: { type: 'string' }, help: { type: 'boolean', short: 'h' }
+    cases: { type: 'string' }, adapter: { type: 'string' }, prompt: { type: 'string' }, model: { type: 'string' }, timeout: { type: 'string' }, repeat: { type: 'string' }, concurrency: { type: 'string' }, 'failed-from': { type: 'string' }, details: { type: 'boolean' }, out: { type: 'string' }, baseline: { type: 'string' }, current: { type: 'string' }, report: { type: 'string' }, markdown: { type: 'string' }, html: { type: 'string' }, summary: { type: 'string' }, help: { type: 'boolean', short: 'h' }
   } });
   if (values.help || !positionals.length) { console.log(help); return; }
   if (positionals.length !== 1 || !['run', 'compare', 'validate'].includes(positionals[0])) throw new Error('Use run, compare, or validate. See --help.');
@@ -55,6 +56,7 @@ async function main() {
     return;
   }
   if (values.repeat !== undefined && positionals[0] !== 'run') throw new Error('--repeat is only valid with run; compare uses saved trial settings.');
+  if (values.concurrency !== undefined && positionals[0] !== 'run') throw new Error('--concurrency is only valid with run.');
   if (values['failed-from'] && (positionals[0] !== 'run' || values.baseline)) throw new Error('--failed-from is for run without --baseline; reruns produce a separate subset artifact.');
   if (values.details && !values.baseline) throw new Error('--details requires --baseline.');
   if ((values.report || values.markdown) && !values.baseline) throw new Error('--report and --markdown require --baseline.');
@@ -77,6 +79,8 @@ async function main() {
     if (!values.cases || Number(Boolean(values.adapter)) + Number(Boolean(values.prompt)) !== 1) throw new Error('run requires --cases and exactly one of --adapter or --prompt.');
     const timeoutMs = Number(values.timeout ?? 30000);
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600000) throw new Error('--timeout must be an integer from 1 to 600000.');
+    const concurrency = Number(values.concurrency ?? 1);
+    if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) throw new Error('--concurrency must be an integer from 1 to 32.');
     let repeat = Number(values.repeat ?? 1);
     let cases = await loadCases(values.cases);
     if (values['failed-from']) {
@@ -118,7 +122,7 @@ async function main() {
         return content;
       };
     }
-    current = await runCases(cases, adapter, { timeoutMs, repeat });
+    current = await runCases(cases, adapter, { timeoutMs, repeat, concurrency });
     if (values.out) await save(values.out, JSON.stringify(current, null, 2) + '\n');
     console.log(`Passing: ${current.passed}/${current.total}`);
     for (const row of current.results.filter(r => !r.passed)) console.log(`  FAIL ${row.id}: ${JSON.stringify(row.error || row.grades.filter(g => !g.passed).map(g => g.reason).join('; '))}`);
